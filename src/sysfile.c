@@ -111,6 +111,17 @@ sys_fstat(void)
 
   if(argfd(0, 0, &f) < 0 || argptr(1, (void*)&st, sizeof(*st)) < 0)
     return -1;
+
+  // Information dump about extent
+  // Extracted from stat.h
+  if(st->type == T_EXTENT){
+    cprintf("Type of the file: %s\n", st->type);
+    cprintf("File system's disk device: %d\n", st->dev);
+    cprintf("Inode Number: %d\n", st->ino);
+    cprintf("Number of links to the file: %d\n", st->nlink);
+    cprintf("Size of the file in bytes: %d\n", st->size);
+  }
+
   return filestat(f, st);
 }
 
@@ -441,4 +452,33 @@ sys_pipe(void)
   fd[0] = fd0;
   fd[1] = fd1;
   return 0;
+}
+
+int
+sys_lseek(void)
+{
+  struct file *fd;
+  int offset;
+  if((argfd(0, 0, &fd) < 0) || (argint(1, &offset) < 0)){
+    cprintf("sys_lseek ERROR: Input Invalid\n");
+    return -1;
+  }
+  if(offset < 0 || fd < 0){
+    cprintf("sys_lseek ERROR: Invalid offset/fd \n");
+    return -1;
+  }
+  if(fd->type == FD_INODE){
+    ilock(fd->ip); //freeze to modify
+    cprintf("sys_lseek SUCCESS: Offset before lseek update: %d\n", fd->off);
+    cprintf("sys_lseek SUCCESS: Inode in-memory size before offset: %d\n", fd->ip->size);
+    fd->off = offset;
+    if(offset > fd->ip->size){
+      fd->ip->size = offset;
+    }
+    cprintf("sys_lseek SUCCESS: Offset after lseek update: %d\n", fd->off);
+    cprintf("sys_lseek SUCCESS: Inode in-memory size after offset: %d\n", fd->ip->size);
+    iunlock(fd->ip);
+    return fd->off;
+  }
+  return -1;
 }
