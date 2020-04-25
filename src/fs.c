@@ -374,28 +374,55 @@ bmap(struct inode *ip, uint bn)
 {
   uint addr, *a;
   struct buf *bp;
-
-  if(bn < NDIRECT){
-    if((addr = ip->addrs[bn]) == 0)
-      ip->addrs[bn] = addr = balloc(ip->dev);
-    return addr;
-  }
-  bn -= NDIRECT;
-
-  if(bn < NINDIRECT){
-    // Load indirect block, allocating if necessary.
-    if((addr = ip->addrs[NDIRECT]) == 0)
-      ip->addrs[NDIRECT] = addr = balloc(ip->dev);
-    bp = bread(ip->dev, addr);
-    a = (uint*)bp->data;
-    if((addr = a[bn]) == 0){
-      a[bn] = addr = balloc(ip->dev);
-      log_write(bp);
+  uint ptr, length; //ptr and a length to specify the on-disk location of a file
+  // checking if the inode type is T_EXTENT so that we can implement an extent type file system
+  if(ip->type == T_EXTENT){
+    int n = 0;
+    // converting to disk address 
+    while(ip->addrs[n]){
+      length = ip->addrs[n] & 0xFF; // The length is the last 1 byte so 
+      if(bn >= ip->addrs[n+1] && bn < ip->addrs[n+1] + length){ //nth block between offset and offset + its length
+        return (length >> 8) + bn - ip->addrs[n+1]; //ptr + bn - offset
+      }
+      n++;
     }
-    brelse(bp);
+    // basically the previous condition didn't pass and we might need to allocate new blocks. 
+    addr = balloc(ip->dev);
+    if(n > 0){
+      length = ip->addrs[n-1] & 0xFF; // Getting size of addr n-1
+      ptr = length >> 8; // First three bytes are the pointer
+      if(addr == ptr + length){
+        ip->addrs[n-1] = (ptr << 8 | (length + 1));
+        return addr;
+      }
+    }
+    // Updating the addrs by creating new blocks.
+    ip->addrs[n] = (addr << 8 | 1); // each addr is 4 bytes where the last byte is length and the first three bytes are pointer
+    ip->addrs[n+1] = bn;
     return addr;
   }
+  else {
+    if(bn < NDIRECT){
+      if((addr = ip->addrs[bn]) == 0)
+        ip->addrs[bn] = addr = balloc(ip->dev);
+      return addr;
+    }
+    bn -= NDIRECT;
 
+    if(bn < NINDIRECT){
+      // Load indirect block, allocating if necessary.
+      if((addr = ip->addrs[NDIRECT]) == 0)
+        ip->addrs[NDIRECT] = addr = balloc(ip->dev);
+      bp = bread(ip->dev, addr);
+      a = (uint*)bp->data;
+      if((addr = a[bn]) == 0){
+        a[bn] = addr = balloc(ip->dev);
+        log_write(bp);
+      }
+      brelse(bp);
+      return addr;
+    }
+  }
   panic("bmap: out of range");
 }
 
@@ -444,6 +471,9 @@ stati(struct inode *ip, struct stat *st)
   st->type = ip->type;
   st->nlink = ip->nlink;
   st->size = ip->size;
+  for(int i = 0; i < 13; i++){
+    st->addrs[i] = ip->addrs[i];
+  }
 }
 
 //PAGEBREAK!
@@ -581,7 +611,7 @@ dirlink(struct inode *dp, char *name, uint inum)
 // Paths
 
 // Copy the next path element from path into name.
-// Return a pointer to the element following the copied one.
+// Return a ptr to the element following the copied one.
 // The returned path has no leading slashes,
 // so the caller can check *path=='\0' to see if the name is the last one.
 // If no name to remove, return 0.

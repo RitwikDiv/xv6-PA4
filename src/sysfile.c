@@ -112,17 +112,47 @@ sys_fstat(void)
   if(argfd(0, 0, &f) < 0 || argptr(1, (void*)&st, sizeof(*st)) < 0)
     return -1;
 
-  // Information dump about extent
-  // Extracted from stat.h
-  if(st->type == T_EXTENT){
-    cprintf("Type of the file: %s\n", st->type);
-    cprintf("File system's disk device: %d\n", st->dev);
-    cprintf("Inode Number: %d\n", st->ino);
-    cprintf("Number of links to the file: %d\n", st->nlink);
-    cprintf("Size of the file in bytes: %d\n", st->size);
-  }
-
   return filestat(f, st);
+}
+
+int 
+sys_printstat(void)
+{
+  struct stat *st;
+  if(argptr(1, (void*)&st, sizeof(*st)) < 0)
+    return -1;
+  // printing type of the file
+  switch(st->type){
+    case T_FILE:
+      cprintf("\nType of the file: T_FILE\n");
+      break;
+    case T_DIR:
+      cprintf("\nType of the file: T_DIR\n");
+      break;
+    case T_EXTENT:
+      cprintf("\nType of the file: T_EXTENT\n");
+      break;
+    case T_DEV:
+      cprintf("\nType of the file: T_DEV\n");
+      break;
+  }
+  //printing other information about the file type
+  cprintf("File system's disk device: %d\n", st->dev);
+  cprintf("Inode Number: %d\n", st->ino);
+  cprintf("Number of links to the file: %d\n", st->nlink);
+  cprintf("Size of the file in bytes: %d\n", st->size);
+
+  // Extent based files are characterized by pointer and length/size provided below
+  if(st->type == T_EXTENT) {
+      int i = 0;
+      while(st->addrs[i] && i < NDIRECT+1){
+        cprintf("\n--- ADDRESS INFO ---\n");
+        cprintf("Pointer: %x\n", ((st->addrs[i] & ~0xff) >> 8));
+        cprintf("Length: %d\n", (st->addrs[i] & 0xff));
+        ++i;
+      }
+  }
+  return 0;
 }
 
 // Create the path new as a link to the same inode as old.
@@ -307,7 +337,12 @@ sys_open(void)
   begin_op();
 
   if(omode & O_CREATE){
-    ip = create(path, T_FILE, 0, 0);
+    if(O_EXTENT){
+      ip = create(path, T_EXTENT, 0, 0); // Creating a T_EXTENT type file if O_EXTENT was passed
+    }
+    else{ 
+      ip = create(path, T_FILE, 0, 0);
+    }
     if(ip == 0){
       end_op();
       return -1;
