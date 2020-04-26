@@ -15,7 +15,7 @@ View the testing document if you have any more questions
 --- 
 ### Files Changed 
 
-ALL CHANGES REFLECTED IN changes.txt
+ALL CHANGES REFLECTED IN docs/changes.txt
 
 - Lseek functionality
     - Makefile - To add the test to system call
