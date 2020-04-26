@@ -46,6 +46,7 @@ ls(char *path)
     printf(1, "%s %d %d %d\n", fmtname(path), st.type, st.ino, st.size);
     break;
 
+  // Just extending the same file functionality to T_EXTENT
   case T_EXTENT:
     printf(1, "%s %d %d %d\n", fmtname(path), st.type, st.ino, st.size);
     break;

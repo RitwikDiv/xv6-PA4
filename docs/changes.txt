@@ -1,0 +1,285 @@
+diff -uw xv6-PA4/src/Makefile xv6-PA4-old/src/Makefile
+--- xv6-PA4/src/Makefile	2020-04-25 15:05:27.602654500 -0400
++++ xv6-PA4-old/src/Makefile	2020-04-26 16:52:08.441208100 -0400
+@@ -181,8 +181,6 @@
+ 	_usertests\
+ 	_wc\
+ 	_zombie\
+-	_lseektest\
+-	_extenttest\
+ 
+ fs.img: mkfs README $(UPROGS)
+ 	./mkfs fs.img README $(UPROGS)
+@@ -252,7 +250,7 @@
+ EXTRA=\
+ 	mkfs.c ulib.c user.h cat.c echo.c forktest.c grep.c kill.c\
+ 	ln.c ls.c mkdir.c rm.c stressfs.c usertests.c wc.c zombie.c\
+-	printf.c umalloc.c lseektest.c extenttest.c\
++	printf.c umalloc.c\
+ 	README dot-bochsrc *.pl toc.* runoff runoff1 runoff.list\
+ 	.gdbinit.tmpl gdbutil\
+ 
+Only in xv6-PA4/src: extenttest.c
+diff -uw xv6-PA4/src/fcntl.h xv6-PA4-old/src/fcntl.h
+--- xv6-PA4/src/fcntl.h	2020-04-24 19:11:19.827498800 -0400
++++ xv6-PA4-old/src/fcntl.h	2020-04-26 16:52:10.579282600 -0400
+@@ -2,4 +2,3 @@
+ #define O_WRONLY  0x001
+ #define O_RDWR    0x002
+ #define O_CREATE  0x200
+-#define O_EXTENT  0x003 // Adding new extent value
+\ No newline at end of file
+diff -uw xv6-PA4/src/fs.c xv6-PA4-old/src/fs.c
+--- xv6-PA4/src/fs.c	2020-04-26 14:32:30.267351300 -0400
++++ xv6-PA4-old/src/fs.c	2020-04-26 16:52:11.020224800 -0400
+@@ -374,34 +374,7 @@
+ {
+   uint addr, *a;
+   struct buf *bp;
+-  uint ptr, length; //ptr and a length to specify the on-disk location of a file
+-  // checking if the inode type is T_EXTENT so that we can implement an extent type file system
+-  if(ip->type == T_EXTENT){
+-    int n = 0;
+-    // converting to disk address 
+-    while(ip->addrs[n]){
+-      length = ip->addrs[n] & 0xFF; // The length is the last 1 byte so 
+-      if(bn >= ip->addrs[n+1] && bn < ip->addrs[n+1] + length){ //nth block between offset and offset + its length
+-        return (length >> 8) + bn - ip->addrs[n+1]; //ptr + bn - offset
+-      }
+-      n++;
+-    }
+-    // basically the previous condition didn't pass and we might need to allocate new blocks. 
+-    addr = balloc(ip->dev);
+-    if(n > 0){
+-      length = ip->addrs[n-1] & 0xFF; // Getting size of addr n-1
+-      ptr = length >> 8; // First three bytes are the pointer
+-      if(addr == ptr + length){
+-        ip->addrs[n-1] = (ptr << 8 | (length + 1));
+-        return addr;
+-      }
+-    }
+-    // Updating the addrs by creating new blocks.
+-    ip->addrs[n] = (addr << 8 | 1); // each addr is 4 bytes where the last byte is length and the first three bytes are pointer
+-    ip->addrs[n+1] = bn;
+-    return addr;
+-  }
+-  else {
++
+     if(bn < NDIRECT){
+       if((addr = ip->addrs[bn]) == 0)
+         ip->addrs[bn] = addr = balloc(ip->dev);
+@@ -422,7 +395,7 @@
+       brelse(bp);
+       return addr;
+     }
+-  }
++
+   panic("bmap: out of range");
+ }
+ 
+@@ -471,9 +444,6 @@
+   st->type = ip->type;
+   st->nlink = ip->nlink;
+   st->size = ip->size;
+-  for(int i = 0; i < 13; i++){
+-    st->addrs[i] = ip->addrs[i];
+-  }
+ }
+ 
+ //PAGEBREAK!
+@@ -611,7 +581,7 @@
+ // Paths
+ 
+ // Copy the next path element from path into name.
+-// Return a ptr to the element following the copied one.
++// Return a pointer to the element following the copied one.
+ // The returned path has no leading slashes,
+ // so the caller can check *path=='\0' to see if the name is the last one.
+ // If no name to remove, return 0.
+diff -uw xv6-PA4/src/ls.c xv6-PA4-old/src/ls.c
+--- xv6-PA4/src/ls.c	2020-04-26 14:33:33.187579300 -0400
++++ xv6-PA4-old/src/ls.c	2020-04-26 16:52:12.948750600 -0400
+@@ -46,11 +46,6 @@
+     printf(1, "%s %d %d %d\n", fmtname(path), st.type, st.ino, st.size);
+     break;
+ 
+-  // Just extending the same file functionality to T_EXTENT
+-  case T_EXTENT:
+-    printf(1, "%s %d %d %d\n", fmtname(path), st.type, st.ino, st.size);
+-    break;
+-
+   case T_DIR:
+     if(strlen(path) + 1 + DIRSIZ + 1 > sizeof buf){
+       printf(1, "ls: path too long\n");
+Only in xv6-PA4/src: lseektest.c
+diff -uw xv6-PA4/src/stat.h xv6-PA4-old/src/stat.h
+--- xv6-PA4/src/stat.h	2020-04-25 13:58:39.538832800 -0400
++++ xv6-PA4-old/src/stat.h	2020-04-26 16:52:20.100337200 -0400
+@@ -1,10 +1,6 @@
+ #define T_DIR  1   // Directory
+ #define T_FILE 2   // File
+ #define T_DEV  3   // Device
+-// Add an O_EXTENT flag to the open() system call 
+-// that will create an extent based file.
+-// We need to add a new flag for a new type of file for extent
+-#define T_EXTENT 4
+ 
+ struct stat {
+   short type;  // Type of file
+@@ -12,5 +8,4 @@
+   uint ino;    // Inode number
+   short nlink; // Number of links to file
+   uint size;   // Size of file in bytes
+-  uint addrs[13];
+ };
+diff -uw xv6-PA4/src/syscall.c xv6-PA4-old/src/syscall.c
+--- xv6-PA4/src/syscall.c	2020-04-25 16:10:21.157832700 -0400
++++ xv6-PA4-old/src/syscall.c	2020-04-26 16:52:20.657225100 -0400
+@@ -103,8 +103,6 @@
+ extern int sys_wait(void);
+ extern int sys_write(void);
+ extern int sys_uptime(void);
+-extern int sys_lseek(void);
+-extern int sys_printstat(void);
+ 
+ static int (*syscalls[])(void) = {
+ [SYS_fork]    sys_fork,
+@@ -128,8 +126,6 @@
+ [SYS_link]    sys_link,
+ [SYS_mkdir]   sys_mkdir,
+ [SYS_close]   sys_close,
+-[SYS_lseek]   sys_lseek,
+-[SYS_printstat] sys_printstat,
+ };
+ 
+ void
+diff -uw xv6-PA4/src/syscall.h xv6-PA4-old/src/syscall.h
+--- xv6-PA4/src/syscall.h	2020-04-25 16:09:40.560235900 -0400
++++ xv6-PA4-old/src/syscall.h	2020-04-26 16:52:20.806164500 -0400
+@@ -20,5 +20,3 @@
+ #define SYS_link   19
+ #define SYS_mkdir  20
+ #define SYS_close  21
+-#define SYS_lseek  22
+-#define SYS_printstat 23
+diff -uw xv6-PA4/src/sysfile.c xv6-PA4-old/src/sysfile.c
+--- xv6-PA4/src/sysfile.c	2020-04-25 16:27:25.006388400 -0400
++++ xv6-PA4-old/src/sysfile.c	2020-04-26 16:52:20.946980500 -0400
+@@ -111,50 +111,9 @@
+ 
+   if(argfd(0, 0, &f) < 0 || argptr(1, (void*)&st, sizeof(*st)) < 0)
+     return -1;
+-
+   return filestat(f, st);
+ }
+ 
+-int 
+-sys_printstat(void)
+-{
+-  struct stat *st;
+-  if(argptr(1, (void*)&st, sizeof(*st)) < 0)
+-    return -1;
+-  // printing type of the file
+-  switch(st->type){
+-    case T_FILE:
+-      cprintf("\nType of the file: T_FILE\n");
+-      break;
+-    case T_DIR:
+-      cprintf("\nType of the file: T_DIR\n");
+-      break;
+-    case T_EXTENT:
+-      cprintf("\nType of the file: T_EXTENT\n");
+-      break;
+-    case T_DEV:
+-      cprintf("\nType of the file: T_DEV\n");
+-      break;
+-  }
+-  //printing other information about the file type
+-  cprintf("File system's disk device: %d\n", st->dev);
+-  cprintf("Inode Number: %d\n", st->ino);
+-  cprintf("Number of links to the file: %d\n", st->nlink);
+-  cprintf("Size of the file in bytes: %d\n", st->size);
+-
+-  // Extent based files are characterized by pointer and length/size provided below
+-  if(st->type == T_EXTENT) {
+-      int i = 0;
+-      while(st->addrs[i] && i < NDIRECT+1){
+-        cprintf("\n--- ADDRESS INFO ---\n");
+-        cprintf("Pointer: %x\n", ((st->addrs[i] & ~0xff) >> 8));
+-        cprintf("Length: %d\n", (st->addrs[i] & 0xff));
+-        ++i;
+-      }
+-  }
+-  return 0;
+-}
+-
+ // Create the path new as a link to the same inode as old.
+ int
+ sys_link(void)
+@@ -337,12 +296,7 @@
+   begin_op();
+ 
+   if(omode & O_CREATE){
+-    if(O_EXTENT){
+-      ip = create(path, T_EXTENT, 0, 0); // Creating a T_EXTENT type file if O_EXTENT was passed
+-    }
+-    else{ 
+       ip = create(path, T_FILE, 0, 0);
+-    }
+     if(ip == 0){
+       end_op();
+       return -1;
+@@ -488,32 +442,3 @@
+   fd[1] = fd1;
+   return 0;
+ }
+-
+-int
+-sys_lseek(void)
+-{
+-  struct file *fd;
+-  int offset;
+-  if((argfd(0, 0, &fd) < 0) || (argint(1, &offset) < 0)){
+-    cprintf("sys_lseek ERROR: Input Invalid\n");
+-    return -1;
+-  }
+-  if(offset < 0 || fd < 0){
+-    cprintf("sys_lseek ERROR: Invalid offset/fd \n");
+-    return -1;
+-  }
+-  if(fd->type == FD_INODE){
+-    ilock(fd->ip); //freeze to modify
+-    cprintf("sys_lseek SUCCESS: Offset before lseek update: %d\n", fd->off);
+-    cprintf("sys_lseek SUCCESS: Inode in-memory size before offset: %d\n", fd->ip->size);
+-    fd->off = offset;
+-    if(offset > fd->ip->size){
+-      fd->ip->size = offset;
+-    }
+-    cprintf("sys_lseek SUCCESS: Offset after lseek update: %d\n", fd->off);
+-    cprintf("sys_lseek SUCCESS: Inode in-memory size after offset: %d\n", fd->ip->size);
+-    iunlock(fd->ip);
+-    return fd->off;
+-  }
+-  return -1;
+-}
+diff -uw xv6-PA4/src/user.h xv6-PA4-old/src/user.h
+--- xv6-PA4/src/user.h	2020-04-25 16:08:27.611451000 -0400
++++ xv6-PA4-old/src/user.h	2020-04-26 16:52:22.495153500 -0400
+@@ -23,8 +23,6 @@
+ char* sbrk(int);
+ int sleep(int);
+ int uptime(void);
+-int lseek(int fd, int offset);
+-int printstat(struct stat*);
+ 
+ // ulib.c
+ int stat(const char*, struct stat*);
+diff -uw xv6-PA4/src/usys.S xv6-PA4-old/src/usys.S
+--- xv6-PA4/src/usys.S	2020-04-25 16:10:59.315267500 -0400
++++ xv6-PA4-old/src/usys.S	2020-04-26 16:52:22.757779400 -0400
+@@ -29,5 +29,3 @@
+ SYSCALL(sbrk)
+ SYSCALL(sleep)
+ SYSCALL(uptime)
+-SYSCALL(lseek)
+-SYSCALL(printstat)

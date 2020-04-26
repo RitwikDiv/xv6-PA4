@@ -13,7 +13,7 @@ int main(int argc, char *argv[]){
 	printstat(&st);
 	close(fd1);
 	printf(1,"\n");
-	// Shoudl work successfully since the absense of O_EXTENT leads to creation of T_FILE
+	// Should work successfully since the absense of O_EXTENT leads to creation of T_FILE
 	
 	printf(1, "\n*** TEST 2: Checking READ/WRITE with O_EXTENT flags *** \n");
 	int fd2; 
